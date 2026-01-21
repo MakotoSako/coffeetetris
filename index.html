@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Tetris Final Version</title>
+    <title>Tetris Responsive Edition</title>
     <style>
         body {
             margin: 0;
@@ -17,8 +17,7 @@
         }
         canvas {
             background-color: #0a0a14;
-            box-shadow: 0 0 20px rgba(0,0,0,0.5);
-            touch-action: none;
+            touch-action: none; /* スマホのスクロールを防止 */
         }
     </style>
 </head>
@@ -27,17 +26,23 @@
 <canvas id="gameCanvas"></canvas>
 
 <script>
-const SCREEN_WIDTH = 360;
-const SCREEN_HEIGHT = 640;
+// --- 画面サイズに合わせて動的に定数を設定 ---
+const SCREEN_WIDTH = window.innerWidth;
+const SCREEN_HEIGHT = window.innerHeight;
 
 const GRID_WIDTH = 10;
-const BLOCK_SIZE = SCREEN_WIDTH / GRID_WIDTH; // 36px
-const GRID_HEIGHT = 14; 
+const BLOCK_SIZE = SCREEN_WIDTH / GRID_WIDTH; // 画面幅を10等分
 
-const UI_HEIGHT = 50; 
-const GRID_TOTAL_HEIGHT = BLOCK_SIZE * GRID_HEIGHT; // 504px
-const CONTROLS_Y = UI_HEIGHT + GRID_TOTAL_HEIGHT; // 554px
-const CONTROLS_HEIGHT = SCREEN_HEIGHT - CONTROLS_Y; // 86px
+// 上下のエリアを画面の高さに対する割合で確保
+const UI_HEIGHT = Math.floor(SCREEN_HEIGHT * 0.08); // 上部8%
+const CONTROLS_HEIGHT = Math.floor(SCREEN_HEIGHT * 0.15); // 下部15%
+
+// 残りのスペースにいくつブロックが入るか計算
+const GRID_HEIGHT = Math.floor((SCREEN_HEIGHT - UI_HEIGHT - CONTROLS_HEIGHT) / BLOCK_SIZE);
+// 実際に使うグリッドの縦のピクセル数
+const GRID_TOTAL_HEIGHT = BLOCK_SIZE * GRID_HEIGHT;
+// 操作パネルの開始位置（グリッドのすぐ下に配置）
+const CONTROLS_Y = UI_HEIGHT + GRID_TOTAL_HEIGHT;
 
 const SHAPES = [
     [[1, 1, 1, 1]], [[1, 1], [1, 1]], [[0, 1, 0], [1, 1, 1]],
@@ -153,11 +158,15 @@ let game = new Tetris();
 let lastTime = 0, dropCounter = 0;
 const dropInterval = 500;
 
-const btnW = 60, btnHFull = 60, gap = 6;
+// ボタンサイズも画面幅に合わせて調整
+const btnW = Math.min(SCREEN_WIDTH * 0.18, 70); // 画面幅の18%か最大70px
+const gap = 8;
+const btnHFull = btnW;
 const btnHHalf = (btnHFull / 2) - (gap / 2);
 const totalW = btnW * 3 + gap * 2;
 const startX = (SCREEN_WIDTH - totalW) / 2;
-const baseY = CONTROLS_Y + (CONTROLS_HEIGHT - btnHFull) / 2;
+// 下部操作エリア内の垂直中央に配置
+const baseY = CONTROLS_Y + (SCREEN_HEIGHT - CONTROLS_Y - btnHFull) / 2;
 
 const btns = {
     L:    { x: startX, y: baseY, w: btnW, h: btnHFull, label: "L" },
@@ -172,8 +181,9 @@ function draw() {
     if (images.bg.complete && images.bg.width > 0) ctx.drawImage(images.bg, 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
     else { ctx.fillStyle = '#0a0a14'; ctx.fillRect(0,0,SCREEN_WIDTH, SCREEN_HEIGHT); }
 
-    ctx.fillStyle = "white"; ctx.font = "bold 24px Arial"; ctx.textAlign = "center";
-    ctx.fillText(`SCORE: ${String(game.score).padStart(6, '0')}`, SCREEN_WIDTH / 2, 35);
+    // スコア表示の位置調整
+    ctx.fillStyle = "white"; ctx.font = `bold ${Math.floor(UI_HEIGHT * 0.5)}px Arial`; ctx.textAlign = "center";
+    ctx.fillText(`SCORE: ${String(game.score).padStart(6, '0')}`, SCREEN_WIDTH / 2, UI_HEIGHT * 0.7);
 
     for (let r = 0; r < GRID_HEIGHT; r++) {
         for (let c = 0; c < GRID_WIDTH; c++) {
@@ -187,8 +197,9 @@ function draw() {
         }
     }
 
+    // 操作パネルの背景
     ctx.fillStyle = "rgba(20, 20, 30, 0.8)";
-    ctx.fillRect(0, CONTROLS_Y, SCREEN_WIDTH, CONTROLS_HEIGHT);
+    ctx.fillRect(0, CONTROLS_Y, SCREEN_WIDTH, SCREEN_HEIGHT - CONTROLS_Y);
 
     for (let key in btns) {
         const b = btns[key];
@@ -205,9 +216,13 @@ function draw() {
         ctx.fillStyle = "rgba(0,0,0,0.7)";
         ctx.fillRect(0,0,SCREEN_WIDTH, SCREEN_HEIGHT);
         const cx = SCREEN_WIDTH/2, cy = SCREEN_HEIGHT/2;
-        if (images.go.complete && images.go.width > 0) ctx.drawImage(images.go, cx - 140, cy - 90, 280, 60);
-        if (images.restart.complete) ctx.drawImage(images.restart, cx - 130, cy, 120, 40);
-        if (images.finish.complete) ctx.drawImage(images.finish, cx + 10, cy, 120, 40);
+        const goW = Math.min(SCREEN_WIDTH * 0.8, 280);
+        if (images.go.complete) ctx.drawImage(images.go, cx - goW/2, cy - 90, goW, goW * 0.21);
+        
+        const bw = Math.min(SCREEN_WIDTH * 0.35, 120);
+        const bh = bw * 0.33;
+        if (images.restart.complete) ctx.drawImage(images.restart, cx - bw - 10, cy, bw, bh);
+        if (images.finish.complete) ctx.drawImage(images.finish, cx + 10, cy, bw, bh);
     }
 }
 
@@ -239,11 +254,11 @@ function terminateGame() {
     ctx.fillStyle = "black";
     ctx.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
     ctx.fillStyle = "white";
-    ctx.font = "bold 20px Arial";
+    ctx.font = `bold ${Math.floor(SCREEN_WIDTH * 0.05)}px Arial`;
     ctx.textAlign = "center";
     ctx.fillText("THANK YOU FOR PLAYING!", SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2);
     
-    setTimeout(() => { window.close(); }, 1000);
+    setTimeout(() => { window.close(); }, 1500);
 }
 
 canvas.addEventListener('mousedown', (e) => handleInput(e));
@@ -270,13 +285,13 @@ function handleInput(e) {
         }
     } else {
         const cx = SCREEN_WIDTH/2, cy = SCREEN_HEIGHT/2;
-        // RESTART: cx-130 ～ cx-10
-        if (x >= cx - 130 && x <= cx - 10 && y >= cy && y <= cy + 40) {
+        const bw = Math.min(SCREEN_WIDTH * 0.35, 120);
+        const bh = bw * 0.33;
+        if (x >= cx - bw - 10 && x <= cx - 10 && y >= cy && y <= cy + bh) {
             game = new Tetris(); 
             if(sounds.bgm) sounds.bgm.play();
         }
-        // FINISH: cx+10 ～ cx+130
-        if (x >= cx + 10 && x <= cx + 130 && y >= cy && y <= cy + 40) {
+        if (x >= cx + 10 && x <= cx + bw + 10 && y >= cy && y <= cy + bh) {
             terminateGame();
         }
     }
