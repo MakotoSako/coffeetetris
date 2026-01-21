@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Tetris Final Version</title>
+    <style>
+        body {
+            margin: 0;
+            background-color: #222;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            overflow: hidden;
+            font-family: Arial, sans-serif;
+        }
+        canvas {
+            background-color: #0a0a14;
+            box-shadow: 0 0 20px rgba(0,0,0,0.5);
+            touch-action: none;
+        }
+    </style>
+</head>
+<body>
+
+<canvas id="gameCanvas"></canvas>
+
+<script>
+const SCREEN_WIDTH = 360;
+const SCREEN_HEIGHT = 640;
+
+const GRID_WIDTH = 10;
+const BLOCK_SIZE = SCREEN_WIDTH / GRID_WIDTH; // 36px
+const GRID_HEIGHT = 14; 
+
+const UI_HEIGHT = 50; 
+const GRID_TOTAL_HEIGHT = BLOCK_SIZE * GRID_HEIGHT; // 504px
+const CONTROLS_Y = UI_HEIGHT + GRID_TOTAL_HEIGHT; // 554px
+const CONTROLS_HEIGHT = SCREEN_HEIGHT - CONTROLS_Y; // 86px
+
+const SHAPES = [
+    [[1, 1, 1, 1]], [[1, 1], [1, 1]], [[0, 1, 0], [1, 1, 1]],
+    [[0, 1, 1], [1, 1, 0]], [[1, 1, 0], [0, 1, 1]],
+    [[1, 0, 0], [1, 1, 1]], [[0, 0, 1], [1, 1, 1]]
+];
+
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+canvas.width = SCREEN_WIDTH;
+canvas.height = SCREEN_HEIGHT;
+
+const images = {};
+const sounds = {};
+let animationId = null;
+let isFinished = false;
+
+function loadAssets() {
+    images.bg = new Image(); images.bg.src = 'background.png';
+    for(let i=1; i<=7; i++) {
+        images[`block${i}`] = new Image();
+        images[`block${i}`].src = `my_texture0${i}.png`;
+    }
+    images.btnL = new Image(); images.btnL.src = 'button_l.png';
+    images.btnR = new Image(); images.btnR.src = 'button_r.png';
+    images.btnRot = new Image(); images.btnRot.src = 'button_rotate.png';
+    images.btnDown = new Image(); images.btnDown.src = 'button_down.png';
+    images.go = new Image(); images.go.src = 'gameover.png';
+    images.restart = new Image(); images.restart.src = 'restart.png';
+    images.finish = new Image(); images.finish.src = 'finish.png';
+
+    sounds.move = new Audio('move.wav');
+    sounds.rotate = new Audio('rotate.wav');
+    sounds.clear = new Audio('clear.wav');
+    sounds.gameover = new Audio('gameover.wav');
+    sounds.bgm = new Audio('bgm.mp3');
+    if(sounds.bgm) sounds.bgm.loop = true;
+}
+
+class Tetris {
+    constructor() {
+        this.grid = Array.from({ length: GRID_HEIGHT }, () => Array(GRID_WIDTH).fill(0));
+        this.score = 0;
+        this.gameOver = false;
+        this.newPiece();
+    }
+    newPiece() {
+        const idx = Math.floor(Math.random() * SHAPES.length);
+        this.pieceShape = SHAPES[idx];
+        this.pieceTextureIdx = idx + 1;
+        this.pieceX = Math.floor(GRID_WIDTH / 2 - this.pieceShape[0].length / 2);
+        this.pieceY = 0;
+        if (this.checkCollision(0, 0)) {
+            this.gameOver = true;
+            if(sounds.bgm) sounds.bgm.pause();
+            if(sounds.gameover) sounds.gameover.play();
+        }
+    }
+    checkCollision(dx, dy, shape = this.pieceShape) {
+        for (let r = 0; r < shape.length; r++) {
+            for (let c = 0; c < shape[r].length; c++) {
+                if (shape[r][c]) {
+                    let newX = this.pieceX + c + dx;
+                    let newY = this.pieceY + r + dy;
+                    if (newX < 0 || newX >= GRID_WIDTH || newY >= GRID_HEIGHT || 
+                       (newY >= 0 && this.grid[newY][newX] > 0)) return true;
+                }
+            }
+        }
+        return false;
+    }
+    rotate() {
+        const rotated = this.pieceShape[0].map((_, i) => this.pieceShape.map(row => row[i]).reverse());
+        if (!this.checkCollision(0, 0, rotated)) {
+            this.pieceShape = rotated;
+            if(sounds.rotate) sounds.rotate.cloneNode(true).play();
+        }
+    }
+    move(dx, dy) {
+        if (!this.checkCollision(dx, dy)) {
+            this.pieceX += dx; this.pieceY += dy;
+            if (dx !== 0 && sounds.move) sounds.move.cloneNode(true).play();
+            return true;
+        } else if (dy > 0) {
+            for (let r = 0; r < this.pieceShape.length; r++) {
+                for (let c = 0; c < this.pieceShape[r].length; c++) {
+                    if (this.pieceShape[r][c] && this.pieceY + r >= 0) {
+                        this.grid[this.pieceY + r][this.pieceX + c] = this.pieceTextureIdx;
+                    }
+                }
+            }
+            this.clearLines(); this.newPiece();
+        }
+        return false;
+    }
+    clearLines() {
+        let linesCleared = 0;
+        for (let r = GRID_HEIGHT - 1; r >= 0; r--) {
+            if (this.grid[r].every(cell => cell > 0)) {
+                this.grid.splice(r, 1);
+                this.grid.unshift(Array(GRID_WIDTH).fill(0));
+                linesCleared++; r++; 
+            }
+        }
+        if (linesCleared > 0) {
+            this.score += linesCleared * 100;
+            if(sounds.clear) sounds.clear.cloneNode(true).play();
+        }
+    }
+}
+
+let game = new Tetris();
+let lastTime = 0, dropCounter = 0;
+const dropInterval = 500;
+
+const btnW = 60, btnHFull = 60, gap = 6;
+const btnHHalf = (btnHFull / 2) - (gap / 2);
+const totalW = btnW * 3 + gap * 2;
+const startX = (SCREEN_WIDTH - totalW) / 2;
+const baseY = CONTROLS_Y + (CONTROLS_HEIGHT - btnHFull) / 2;
+
+const btns = {
+    L:    { x: startX, y: baseY, w: btnW, h: btnHFull, label: "L" },
+    ROT:  { x: startX + btnW + gap, y: baseY, w: btnW, h: btnHHalf, label: "ROT" },
+    DOWN: { x: startX + btnW + gap, y: baseY + btnHHalf + gap, w: btnW, h: btnHHalf, label: "DOWN" },
+    R:    { x: startX + (btnW + gap) * 2, y: baseY, w: btnW, h: btnHFull, label: "R" }
+};
+
+function draw() {
+    if (isFinished) return;
+
+    if (images.bg.complete && images.bg.width > 0) ctx.drawImage(images.bg, 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
+    else { ctx.fillStyle = '#0a0a14'; ctx.fillRect(0,0,SCREEN_WIDTH, SCREEN_HEIGHT); }
+
+    ctx.fillStyle = "white"; ctx.font = "bold 24px Arial"; ctx.textAlign = "center";
+    ctx.fillText(`SCORE: ${String(game.score).padStart(6, '0')}`, SCREEN_WIDTH / 2, 35);
+
+    for (let r = 0; r < GRID_HEIGHT; r++) {
+        for (let c = 0; c < GRID_WIDTH; c++) {
+            const idx = game.grid[r][c];
+            if (idx) drawBlock(idx, c, r);
+        }
+    }
+    for (let r = 0; r < game.pieceShape.length; r++) {
+        for (let c = 0; c < game.pieceShape[r].length; c++) {
+            if (game.pieceShape[r][c]) drawBlock(game.pieceTextureIdx, game.pieceX + c, game.pieceY + r);
+        }
+    }
+
+    ctx.fillStyle = "rgba(20, 20, 30, 0.8)";
+    ctx.fillRect(0, CONTROLS_Y, SCREEN_WIDTH, CONTROLS_HEIGHT);
+
+    for (let key in btns) {
+        const b = btns[key];
+        const imgKey = key === "L" ? "btnL" : key === "R" ? "btnR" : key === "ROT" ? "btnRot" : "btnDown";
+        if (images[imgKey].complete && images[imgKey].width > 0) ctx.drawImage(images[imgKey], b.x, b.y, b.w, b.h);
+        else {
+            ctx.fillStyle = "#28283c"; ctx.strokeStyle = "#ccc"; ctx.lineWidth = 2;
+            ctx.beginPath(); ctx.roundRect(b.x, b.y, b.w, b.h, 6); ctx.fill(); ctx.stroke();
+            ctx.fillStyle = "white"; ctx.font = "bold 12px Arial"; ctx.fillText(b.label, b.x + b.w/2, b.y + b.h/2 + 5);
+        }
+    }
+
+    if (game.gameOver) {
+        ctx.fillStyle = "rgba(0,0,0,0.7)";
+        ctx.fillRect(0,0,SCREEN_WIDTH, SCREEN_HEIGHT);
+        const cx = SCREEN_WIDTH/2, cy = SCREEN_HEIGHT/2;
+        if (images.go.complete && images.go.width > 0) ctx.drawImage(images.go, cx - 140, cy - 90, 280, 60);
+        if (images.restart.complete) ctx.drawImage(images.restart, cx - 130, cy, 120, 40);
+        if (images.finish.complete) ctx.drawImage(images.finish, cx + 10, cy, 120, 40);
+    }
+}
+
+function drawBlock(idx, x, y) {
+    const img = images[`block${idx}`];
+    const px = x * BLOCK_SIZE;
+    const py = y * BLOCK_SIZE + UI_HEIGHT;
+    if (img.complete && img.width > 0) ctx.drawImage(img, px, py, BLOCK_SIZE, BLOCK_SIZE);
+    else { ctx.fillStyle = "#3264c8"; ctx.fillRect(px, py, BLOCK_SIZE - 1, BLOCK_SIZE - 1); }
+}
+
+function update(time = 0) {
+    if (isFinished) return;
+    if (!game.gameOver) {
+        const deltaTime = lastTime ? time - lastTime : 0;
+        lastTime = time;
+        dropCounter += deltaTime;
+        if (dropCounter > dropInterval) { game.move(0, 1); dropCounter = 0; }
+    }
+    draw();
+    animationId = requestAnimationFrame(update);
+}
+
+function terminateGame() {
+    isFinished = true;
+    if (animationId) cancelAnimationFrame(animationId);
+    if (sounds.bgm) sounds.bgm.pause();
+    
+    ctx.fillStyle = "black";
+    ctx.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
+    ctx.fillStyle = "white";
+    ctx.font = "bold 20px Arial";
+    ctx.textAlign = "center";
+    ctx.fillText("THANK YOU FOR PLAYING!", SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2);
+    
+    setTimeout(() => { window.close(); }, 1000);
+}
+
+canvas.addEventListener('mousedown', (e) => handleInput(e));
+canvas.addEventListener('touchstart', (e) => {
+    e.preventDefault(); handleInput(e.touches[0]);
+}, {passive: false});
+
+function handleInput(e) {
+    if (isFinished) return;
+    const rect = canvas.getBoundingClientRect();
+    const x = e.clientX - rect.left; const y = e.clientY - rect.top;
+    
+    if (!game.gameOver) {
+        for (let key in btns) {
+            const b = btns[key];
+            if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) {
+                if (key === "L") game.move(-1, 0);
+                if (key === "R") game.move(1, 0);
+                if (key === "ROT") game.rotate();
+                if (key === "DOWN") game.move(0, 1);
+                if (sounds.bgm && sounds.bgm.paused) sounds.bgm.play();
+                return;
+            }
+        }
+    } else {
+        const cx = SCREEN_WIDTH/2, cy = SCREEN_HEIGHT/2;
+        // RESTART: cx-130 ～ cx-10
+        if (x >= cx - 130 && x <= cx - 10 && y >= cy && y <= cy + 40) {
+            game = new Tetris(); 
+            if(sounds.bgm) sounds.bgm.play();
+        }
+        // FINISH: cx+10 ～ cx+130
+        if (x >= cx + 10 && x <= cx + 130 && y >= cy && y <= cy + 40) {
+            terminateGame();
+        }
+    }
+}
+
+loadAssets();
+requestAnimationFrame(update);
+</script>
+</body>
+</html>
